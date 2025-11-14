@@ -6,16 +6,19 @@ export class Annotation {
   label: string;
   bbox: number[];
   confidence: number;
+  source?: "human" | "model" | "unknown";
+  suggested?: boolean;
 }
 
 @Schema({ timestamps: true })
 export class Image extends Document {
-  @Prop({ required: true, unique: true }) fileName: string;
-  @Prop({ required: true }) filePath: string;
-  @Prop({ default: false }) isEdited: boolean;
-  @Prop({ required: true }) dataset: string;
-  @Prop({ default: "v1" }) version: string;
-  @Prop({ type: Array, default: [] }) annotations: Annotation[];
+  @Prop({ required: true }) fileName: string; // quan trong
+  @Prop({ required: true }) filePath: string; // quan trong
+  @Prop({ default: false }) isEdited: boolean; // quan trong
+  @Prop({ required: true }) dataset: string; // quan trong
+  @Prop({ default: "v1" }) version: string; 
+  @Prop({ type: Array, default: [] }) annotations: Annotation[]; // quan trong
+  @Prop({ default: false }) isCrop: boolean;
 }
 
 export const ImageSchema = SchemaFactory.createForClass(Image);

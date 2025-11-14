@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, HttpStatus, HttpCode } from "@nestjs/common";
 import { ImagesService } from "./images.service";
 import * as path from "path";
 
@@ -7,8 +7,13 @@ export class ImagesController {
   constructor(private readonly service: ImagesService) {}
 
   @Get("list")
-  async list(@Query("dataset") dataset?: string, @Query("version") version?: string) {
-    return this.service.listAll(dataset, version);
+  async list(
+    @Query("dataset") dataset: string,
+    @Query("version") version: string,
+    @Query("limit") limit = "100",
+    @Query("skip") skip = "0",
+  ) {
+    return this.service.listAll(dataset, version, Number(limit), Number(skip));
   }
 
   @Get(":dataset/:version/:fileName")
@@ -23,27 +28,23 @@ export class ImagesController {
   @Post("infer")
   async infer(@Body() body: { fileName: string; dataset: string; version?: string }) {
     const uploadDir = path.join(process.cwd(), "uploads", "images", body.dataset);
-    const absPath = path.join(uploadDir, body.fileName);
+    const classFolder = path.basename(body.fileName).split("_")[0];
+    const absPath = path.join(uploadDir, classFolder, body.fileName);
     return this.service.inferAndSave(absPath, body.dataset, body.version || "v1");
   }
 
-  @Post("crop")
-  async crop(@Body() body: { fileName: string; bbox: number[]; dataset: string; version?: string }) {
-    return this.service.cropAndInfer(body.fileName, body.bbox, body.dataset, body.version || "v1");
-  }
-
   @Post("save")
-  async save(@Body() body: { 
-    fileName: string; 
-    filePath: string; 
-    dataset: string; 
-    version?: string; 
-    annotations: any[]; 
-  }) {
+  async save(
+    @Body() body: {
+      fileName: string;
+      filePath: string;
+      dataset: string;
+      version?: string;
+      annotations: any[];
+    },
+  ) {
     const version = body.version || "v1";
-
     await this.service.saveAnnotation(body.fileName, body.annotations, body.dataset, version);
-
     return this.service.saveImageRecord(
       body.fileName,
       body.filePath,
@@ -53,4 +54,13 @@ export class ImagesController {
     );
   }
 
+  @Post("crop-preview")
+  async cropPreview(@Body() body: any) {
+    return this.service.cropPreview(body.fileName, body.bbox, body.dataset);
+  }
+
+  @Post("crop-save")
+  async cropSave(@Body() body: any) {
+    return this.service.cropSave(body.fileName, body.bbox, body.dataset, body.version);
+  }
 }

@@ -1,7 +1,6 @@
-import { join } from "path";
 import { NestFactory } from "@nestjs/core";
-import { AppModule } from "./app.module";
 import { NestExpressApplication } from "@nestjs/platform-express";
+import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -10,9 +9,9 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
   });
 
-  app.useStaticAssets(join(process.cwd(), "uploads/images"), {
-    prefix: "/uploads/images/",
-  });
+app.useStaticAssets("/home/quangmanh/Documents/pineline/back-end-label/uploads", {
+  prefix: "/uploads",
+});
 
   await app.listen(process.env.PORT || 3001);
   console.log(`Server running at http://localhost:${process.env.PORT || 3001}`);
