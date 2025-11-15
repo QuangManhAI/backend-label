@@ -9,7 +9,7 @@ import { ToolsModule } from "./tools/tools.module";
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRoot(process.env.MONGO_URI || "", {
-      dbName: process.env.MONGO_DB || "label_db",
+      dbName: process.env.MONGO_DB,
     }),
     ImagesModule,
     DataPipelineModule,

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, HttpStatus, HttpCode } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { ImagesService } from "./images.service";
 import * as path from "path";
 

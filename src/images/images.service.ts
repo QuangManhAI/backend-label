@@ -36,17 +36,17 @@ export class ImagesService {
   }
 
   async saveAnnotation(fileName: string, annotations: any[], dataset: string, version: string) {
-    const labelDir = path.join(process.cwd(), "uploads", "labels", dataset, version);
-    fs.mkdirSync(labelDir, { recursive: true });
-    const labelPath = path.join(labelDir, fileName.replace(/\.[^.]+$/, ".txt"));
+    // const labelDir = path.join(process.cwd(), "uploads", "labels", dataset, version);
+    // fs.mkdirSync(labelDir, { recursive: true });
+    // const labelPath = path.join(labelDir, fileName.replace(/\.[^.]+$/, ".txt"));
 
-    const lines = (annotations || []).map(a => {
-      const [x1, y1, x2, y2] = a.bbox;
-      const conf = Number.isFinite(a.confidence) ? a.confidence : 0;
-      return `${a.label} ${x1.toFixed(6)} ${y1.toFixed(6)} ${x2.toFixed(6)} ${y2.toFixed(6)} ${conf.toFixed(4)}`;
-    });
+    // const lines = (annotations || []).map(a => {
+    //   const [x1, y1, x2, y2] = a.bbox;
+    //   const conf = Number.isFinite(a.confidence) ? a.confidence : 0;
+    //   return `${a.label} ${x1.toFixed(6)} ${y1.toFixed(6)} ${x2.toFixed(6)} ${y2.toFixed(6)} ${conf.toFixed(4)}`;
+    // });
 
-    fs.writeFileSync(labelPath, lines.join("\n"), "utf8");
+    // fs.writeFileSync(labelPath, lines.join("\n"), "utf8");
   }
 
   async saveImageRecord(
@@ -69,6 +69,7 @@ export class ImagesService {
         filePath = `/uploads/images/${dataset}/${fileName}`;
       }
     }
+
     const normalizedAnns = (annotations || []).map((a, idx) => ({
       id: a.id ?? idx + 1,
       label: a.label ?? "",
@@ -100,10 +101,8 @@ export class ImagesService {
 
   async inferAndSave(absPath: string, dataset: string, version = "v1") {
     let annotations = await this.inferOne(absPath);
-    if (annotations && annotations.length > 0) {
-      annotations = [annotations.sort((a, b) => b.confidence - a.confidence)[0]];
-    }
 
+    // ❗ Không lọc top-1 nữa — giữ nguyên toàn bộ detections
     const modelAnns = (annotations || []).map((a: any, i: number) => ({
       id: i + 1,
       label: a.label ?? "",
@@ -115,9 +114,11 @@ export class ImagesService {
 
     const fileName = path.basename(absPath);
     const publicPath = this.toPublicPath(absPath);
+
     await this.saveAnnotation(fileName, modelAnns, dataset, version);
     await this.saveAnnotationJson(fileName, modelAnns, dataset, version);
     await this.saveImageRecord(fileName, publicPath, modelAnns, dataset, version);
+
     return { fileName, dataset, version, annotations: modelAnns };
   }
 
@@ -126,9 +127,6 @@ export class ImagesService {
     if (dataset) filter.dataset = dataset;
     if (version) filter.version = version;
 
-    const uploadsRoot = "/home/quangmanh/Documents/pineline/back-end-label/uploads";
-    const imagesRoot = path.join(uploadsRoot, "images");
-
     const imgs = await this.imageModel
       .find(filter)
       .sort({ updatedAt: -1 })
@@ -136,7 +134,7 @@ export class ImagesService {
       .limit(limit)
       .lean();
 
-    const results = imgs.map((i) => ({
+    return imgs.map((i) => ({
       fileName: i.fileName,
       filePath: i.filePath?.startsWith("/uploads/")
         ? i.filePath
@@ -145,8 +143,6 @@ export class ImagesService {
       version: i.version,
       status: i.isEdited ? "EDITED" : "NEW",
     }));
-
-    return results;
   }
 
   async getByName(fileName: string, dataset: string, version = "v1") {
@@ -161,51 +157,56 @@ export class ImagesService {
     dataset: string,
     version: string,
   ) {
-    const cocoDir = path.join(process.cwd(), "uploads", "datasets", dataset, version);
-    fs.mkdirSync(cocoDir, { recursive: true });
-    const jsonPath = path.join(cocoDir, "instances.json");
-    let coco: any;
-    if (fs.existsSync(jsonPath)) {
-      coco = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-    } else {
-      coco = { info: {}, licenses: [], images: [], annotations: [], categories: [] };
-    }
-    const existingCats = new Set(coco.categories.map((c: any) => c.name));
-    for (const ann of annotations) {
-      if (ann.label && !existingCats.has(ann.label)) {
-        existingCats.add(ann.label);
-        coco.categories.push({ id: ann.label, name: ann.label });
-      }
-    }
-    const imgId = coco.images.length + 1;
-    coco.images.push({
-      id: imgId,
-      file_name: fileName,
-      width: 640,
-      height: 640,
-    });
-    for (const ann of annotations) {
-      const [x1, y1, x2, y2] = ann.bbox.map(Number);
-      const w = Math.max(0, x2 - x1);
-      const h = Math.max(0, y2 - y1);
-      coco.annotations.push({
-        id: coco.annotations.length + 1,
-        image_id: imgId,
-        label: ann.label,
-        bbox: [x1, y1, w, h],
-        area: w * h,
-        iscrowd: 0,
-        score: ann.confidence ?? 0,
-      });
-    }
-    fs.writeFileSync(jsonPath, JSON.stringify(coco, null, 2), "utf8");
+    // const cocoDir = path.join(process.cwd(), "uploads", "datasets", dataset, version);
+    // fs.mkdirSync(cocoDir, { recursive: true });
+    // const jsonPath = path.join(cocoDir, "instances.json");
+    // let coco: any;
+
+    // if (fs.existsSync(jsonPath)) {
+    //   coco = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+    // } else {
+    //   coco = { info: {}, licenses: [], images: [], annotations: [], categories: [] };
+    // }
+
+    // const existingCats = new Set(coco.categories.map((c: any) => c.name));
+    // for (const ann of annotations) {
+    //   if (ann.label && !existingCats.has(ann.label)) {
+    //     existingCats.add(ann.label);
+    //     coco.categories.push({ id: ann.label, name: ann.label });
+    //   }
+    // }
+
+    // const imgId = coco.images.length + 1;
+    // coco.images.push({
+    //   id: imgId,
+    //   file_name: fileName,
+    //   width: 640,
+    //   height: 640,
+    // });
+
+    // for (const ann of annotations) {
+    //   const [x1, y1, x2, y2] = ann.bbox.map(Number);
+    //   const w = Math.max(0, x2 - x1);
+    //   const h = Math.max(0, y2 - y1);
+    //   coco.annotations.push({
+    //     id: coco.annotations.length + 1,
+    //     image_id: imgId,
+    //     label: ann.label,
+    //     bbox: [x1, y1, w, h],
+    //     area: w * h,
+    //     iscrowd: 0,
+    //     score: ann.confidence ?? 0,
+    //   });
+    // }
+
+    // fs.writeFileSync(jsonPath, JSON.stringify(coco, null, 2), "utf8");
   }
 
   async cropPreview(fileName: string, bbox: number[], dataset: string) {
     const baseDir = path.join(process.cwd(), "uploads", "images", dataset);
     let absPath = path.join(baseDir, fileName);
 
-    if (fs.existsSync(absPath) === false) {
+    if (!fs.existsSync(absPath)) {
       const subs = fs.readdirSync(baseDir, { withFileTypes: true })
         .filter(d => d.isDirectory())
         .map(d => d.name);
@@ -227,7 +228,12 @@ export class ImagesService {
     const imgH = meta.height ?? 640;
 
     let [x1, y1, x2, y2] = bbox.map(Number);
-    if (x2 <= 1 && y2 <= 1) { x1 *= imgW; y1 *= imgH; x2 *= imgW; y2 *= imgH; }
+
+    // scale normalized to absolute if needed
+    if (x2 <= 1 && y2 <= 1) {
+      x1 *= imgW; y1 *= imgH; x2 *= imgW; y2 *= imgH;
+    }
+
     x1 = Math.max(0, Math.min(imgW - 1, Math.round(x1)));
     y1 = Math.max(0, Math.min(imgH - 1, Math.round(y1)));
     x2 = Math.max(x1 + 1, Math.min(imgW, Math.round(x2)));
@@ -242,30 +248,33 @@ export class ImagesService {
 
     await sharp(absPath).extract({ left: x1, top: y1, width: w, height: h }).toFile(tmpCrop);
 
-    // call model on the crop
+    // YOLO detect on crop (MULTI-OBJECT)
     let anns = await this.inferOne(tmpCrop);
 
-    // normalize: convert first/top detection if exists (keep behavior)
-    if (anns.length > 0) anns = [anns.sort((a, b) => b.confidence - a.confidence)[0]];
-
     const normalized = (v: number) => v <= 1 && v >= 0;
+
     const toAbsInOriginal = (bb: number[]) => {
       let [cx1, cy1, cx2, cy2] = bb.map(Number);
+
       const isNorm = normalized(cx2) && normalized(cy2);
-      if (isNorm) { cx1 *= w; cy1 *= h; cx2 *= w; cy2 *= h; }
+      if (isNorm) {
+        cx1 *= w; cy1 *= h; cx2 *= w; cy2 *= h;
+      }
+
       cx1 = Math.round(cx1) + x1;
       cy1 = Math.round(cy1) + y1;
       cx2 = Math.round(cx2) + x1;
       cy2 = Math.round(cy2) + y1;
+
       cx1 = Math.max(0, Math.min(imgW - 1, cx1));
       cy1 = Math.max(0, Math.min(imgH - 1, cy1));
       cx2 = Math.max(cx1 + 1, Math.min(imgW, cx2));
       cy2 = Math.max(cy1 + 1, Math.min(imgH, cy2));
+
       return [cx1, cy1, cx2, cy2];
     };
 
-    // mark returned anns as model suggestions
-    const annotations = (anns || []).map((a: any, i: number) => ({
+    const annotations = (anns || []).map((a: any) => ({
       label: a.label ?? "",
       bbox: toAbsInOriginal(a.bbox || []),
       confidence: Number(a.confidence ?? 0),
@@ -283,6 +292,7 @@ export class ImagesService {
     fs.mkdirSync(cropDir, { recursive: true });
 
     let absPath = path.join(uploadDir, fileName);
+
     if (!fs.existsSync(absPath)) {
       const subs = fs.readdirSync(uploadDir, { withFileTypes: true })
         .filter(d => d.isDirectory())
