@@ -16,7 +16,7 @@ export class DataPipelineService {
     const subClasses = fs
       .readdirSync(datasetPath)
       .filter(f => fs.statSync(path.join(datasetPath, f)).isDirectory());
-    let total = 0;
+    let total = 0; 
     let success = 0;
     const classList: string[] = [];
     for (const sub of subClasses) {

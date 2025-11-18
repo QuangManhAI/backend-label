@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, HttpException, HttpStatus } from "@nestjs/common";
 import { ImagesService } from "./images.service";
+import { globSync } from "glob";
 import * as path from "path";
+import * as fs from "fs";
 
 @Controller("images")
 export class ImagesController {
@@ -27,9 +29,20 @@ export class ImagesController {
 
   @Post("infer")
   async infer(@Body() body: { fileName: string; dataset: string; version?: string }) {
-    const uploadDir = path.join(process.cwd(), "uploads", "images", body.dataset);
-    const classFolder = path.basename(body.fileName).split("_")[0];
-    const absPath = path.join(uploadDir, classFolder, body.fileName);
+    const datasetDir = path.join(process.cwd(), "uploads", "images", body.dataset);
+
+    // tìm file trong mọi thư mục con
+    const matches = globSync(`${datasetDir}/**/${body.fileName}`);
+
+    if (!matches.length) {
+      throw new HttpException(
+        `Image not found for inference: ${body.fileName}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const absPath = matches[0]; // file duy nhất
+
     return this.service.inferAndSave(absPath, body.dataset, body.version || "v1");
   }
 
