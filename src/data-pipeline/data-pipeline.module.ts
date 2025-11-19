@@ -2,9 +2,10 @@ import { Module } from "@nestjs/common";
 import { DataPipelineService } from "./data-pipeline.service";
 import { DataPipelineController } from "./data-pipeline.controller";
 import { ImagesModule } from "../images/images.module";
+import { R2Module } from "src/r2/r2.module";
 
 @Module({
-  imports: [ImagesModule],
+  imports: [ImagesModule, R2Module],
   providers: [DataPipelineService],
   controllers: [DataPipelineController],
 })

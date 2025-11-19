@@ -4,7 +4,7 @@ import { ConfigModule } from "@nestjs/config";
 import { ImagesModule } from "./images/images.module";
 import { DataPipelineModule } from "./data-pipeline/data-pipeline.module";
 import { ToolsModule } from "./tools/tools.module";
-// import { MinioModule } from "./minio/minio.module";
+import { R2Module } from "./r2/r2.module";
 
 @Module({
   imports: [
@@ -12,7 +12,7 @@ import { ToolsModule } from "./tools/tools.module";
     MongooseModule.forRoot(process.env.MONGO_URI || "", {
       dbName: process.env.MONGO_DB,
     }),
-    // MinioModule,
+    R2Module,
     ImagesModule,
     DataPipelineModule,
     ToolsModule,

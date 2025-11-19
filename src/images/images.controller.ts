@@ -1,12 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query, HttpException, HttpStatus } from "@nestjs/common";
 import { ImagesService } from "./images.service";
-import { globSync } from "glob";
-import * as path from "path";
-import * as fs from "fs";
+import { R2Service } from "../r2/r2.service";
 
 @Controller("images")
 export class ImagesController {
-  constructor(private readonly service: ImagesService) {}
+  constructor(private readonly service: ImagesService, private readonly r2: R2Service) {}
 
   @Get("list")
   async list(
@@ -28,39 +26,35 @@ export class ImagesController {
   }
 
   @Post("infer")
-  async infer(@Body() body: { fileName: string; dataset: string; version?: string }) {
-    const datasetDir = path.join(process.cwd(), "uploads", "images", body.dataset);
-
-    // tìm file trong mọi thư mục con
-    const matches = globSync(`${datasetDir}/**/${body.fileName}`);
-
-    if (!matches.length) {
-      throw new HttpException(
-        `Image not found for inference: ${body.fileName}`,
-        HttpStatus.NOT_FOUND,
-      );
+  async infer(@Body() body: { fileUrl: string; dataset: string; version?: string }) {
+    if (!body.fileUrl) {
+      throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
     }
-
-    const absPath = matches[0]; // file duy nhất
-
-    return this.service.inferAndSave(absPath, body.dataset, body.version || "v1");
+    return this.service.inferAndSave(body.fileUrl, body.dataset, body.version || "v1");
+  }
+    
+  @Post("infer/return-only")
+  async inferReturn(@Body() body: { fileUrl: string; dataset: string; version?: string }) {
+    if (!body.fileUrl) {
+      throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
+    }
+    return this.service.inferAndSaveReturn(body.fileUrl, body.dataset, body.version || "v1");
   }
 
   @Post("save")
   async save(
     @Body() body: {
       fileName: string;
-      filePath: string;
+      fileUrl: string;
       dataset: string;
       version?: string;
       annotations: any[];
     },
   ) {
     const version = body.version || "v1";
-    await this.service.saveAnnotation(body.fileName, body.annotations, body.dataset, version);
     return this.service.saveImageRecord(
       body.fileName,
-      body.filePath,
+      body.fileUrl,
       body.annotations,
       body.dataset,
       version,
@@ -68,12 +62,27 @@ export class ImagesController {
   }
 
   @Post("crop-preview")
-  async cropPreview(@Body() body: any) {
-    return this.service.cropPreview(body.fileName, body.bbox, body.dataset);
+  async cropPreview(
+    @Body() body: { fileUrl: string; bbox: number[]; dataset: string }
+  ) {
+    if (!body.fileUrl) {
+      throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
+    }
+    return this.service.cropPreview(body.fileUrl, body.bbox, body.dataset);
   }
 
   @Post("crop-save")
-  async cropSave(@Body() body: any) {
-    return this.service.cropSave(body.fileName, body.bbox, body.dataset, body.version);
+  async cropSave(
+    @Body() body: { fileUrl: string; bbox: number[]; dataset: string; version?: string }
+  ) {
+    if (!body.fileUrl) {
+      throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
+    }
+    return this.service.cropSave(body.fileUrl, body.bbox, body.dataset, body.version || "v1");
+  }
+
+  @Get("datasets")
+  async listDatasets() {
+    return this.service.listDatasets();
   }
 }

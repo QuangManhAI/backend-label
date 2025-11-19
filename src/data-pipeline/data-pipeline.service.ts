@@ -1,73 +1,90 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ImagesService } from "../images/images.service";
-import * as path from "path";
-import * as fs from "fs";
-import * as yaml from "js-yaml";
+import { R2Service } from "../r2/r2.service";
 
 @Injectable()
 export class DataPipelineService {
   private readonly logger = new Logger(DataPipelineService.name);
-  constructor(private readonly imagesService: ImagesService) {}
-  
+
+  constructor(
+    private readonly images: ImagesService,
+    private readonly r2: R2Service,
+  ) {}
+
+  private prefix(dataset: string) {
+    return `object_detection/${dataset}`;
+  }
+
   async autoLabelDataset(dataset: string, version = "v1") {
-    const rootDir = process.env.DATA_ROOT || path.join(process.cwd(), "..");
-    const datasetPath = path.join(rootDir, "object_detection", dataset);
-    if (!fs.existsSync(datasetPath)) throw new Error(`Dataset not found: ${dataset}`);
-    const subClasses = fs
-      .readdirSync(datasetPath)
-      .filter(f => fs.statSync(path.join(datasetPath, f)).isDirectory());
-    let total = 0; 
+    const root = this.prefix(dataset);
+
+    const classes = await this.r2.listFolders(root);
+    if (classes.length === 0) throw new Error(`Dataset not found: ${dataset}`);
+
+    let total = 0;
     let success = 0;
-    const classList: string[] = [];
-    for (const sub of subClasses) {
-      classList.push(sub);
-      const folder = path.join(datasetPath, sub);
-      const images = fs.readdirSync(folder).filter(f => /\.(jpg|jpeg|png)$/i.test(f));
+
+    for (const cls of classes) {
+      const classPrefix = `${root}/${cls}`;
+      const files = await this.r2.listFiles(classPrefix);
+
+      const images = files.filter(
+        (f) => f.endsWith(".jpg") || f.endsWith(".jpeg") || f.endsWith(".png"),
+      );
+
       total += images.length;
-      for (const img of images) {
-        const absPath = path.join(folder, img);
-        const uploadTarget = path.join(process.cwd(), "uploads", "images", dataset, sub);
-        fs.mkdirSync(uploadTarget, { recursive: true });
-        const dest = path.join(uploadTarget, img);
-        if (!fs.existsSync(dest)) fs.copyFileSync(absPath, dest);
-        try {
-          await this.imagesService.inferAndSave(dest, dataset, version);
-          success++;
-          this.logger.log(`✓ ${dataset}/${sub}/${img}`);
-        } catch (err: any) {
-          this.logger.warn(`✗ ${img} (${sub}): ${err.message}`);
-        }
-      }
+
+for (const key of images) {
+  const url = this.r2.publicUrl(key);
+
+  // --- ALWAYS use key to extract fileName ---
+  const fileName = key.split("/").pop();  // <--- chuẩn nhất
+  if (!fileName) continue;
+
+  try {
+    const rec = await this.images.inferAndSave(url, dataset, version);
+
+    // SAVE TEXT + JSON
+    await this.images.saveAnnotation(fileName, rec.annotations, dataset, version);
+    await this.images.saveAnnotationJson(fileName, rec.annotations, dataset, version);
+
+    success++;
+    this.logger.log(`✔ processed: ${fileName}`);
+  } catch (err) {
+    this.logger.error(`✘ failed: ${fileName} :: ${err}`);
+  }
+}
+
     }
-    this.generateDatasetYaml(dataset, classList, version);
+
+    // ⭐⭐ Auto-generate dataset.yaml ⭐⭐
+    const classList = await this.images.extractClassesFromJson(dataset, version);
+
+    if (classList.length > 0) {
+      await this.images.generateDatasetYaml(dataset, version, classList);
+      this.logger.log(`📄 dataset.yaml updated for ${dataset}/${version}`);
+    } else {
+      this.logger.warn(`⚠ No classes found, YAML not generated.`);
+    }
+
     return { dataset, version, total, success };
   }
 
   async autoLabelAll(version = "v1") {
-    const root = path.join(process.cwd(), "object_detection");
-    if (!fs.existsSync(root)) throw new Error("object_detection folder not found");
-    const datasets = fs
-      .readdirSync(root)
-      .filter(f => fs.statSync(path.join(root, f)).isDirectory() && f.startsWith("classes-"));
+    const root = "object_detection";
+
+    const datasets = await this.r2.listFolders(root);
+    const filtered = datasets.filter((d) => d.startsWith("classes-"));
+
     let totalFiles = 0;
     let totalSuccess = 0;
-    for (const dataset of datasets) {
-      const result = await this.autoLabelDataset(dataset, version);
-      totalFiles += result.total;
-      totalSuccess += result.success;
-    }
-    return { totalFiles, totalSuccess, version };
-  }
 
-  generateDatasetYaml(dataset: string, classList: string[], version = "v1") {
-    const yamlObj = {
-      train: `./images/${dataset}/train`,
-      val: `./images/${dataset}/val`,
-      nc: classList.length,
-      names: classList,
-    };
-    const outDir = path.join(process.cwd(), "uploads", "datasets", dataset, version);
-    fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(path.join(outDir, "dataset.yaml"), yaml.dump(yamlObj), "utf8");
+    for (const dataset of filtered) {
+      const r = await this.autoLabelDataset(dataset, version);
+      totalFiles += r.total;
+      totalSuccess += r.success;
+    }
+
+    return { totalFiles, totalSuccess, version };
   }
 }
