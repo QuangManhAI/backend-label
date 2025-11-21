@@ -16,19 +16,15 @@ export class ImagesService {
   private readonly logger = new Logger(ImagesService.name);
 
   constructor(
-    // Đổi thành public để Controller có thể truy cập model khi export JSON
     @InjectModel(Image.name) public readonly imageModel: Model<Image>,
     private readonly config: ConfigService,
-    private readonly r2: R2Service,
+    private readonly r2: MinioService,
   ) {}
 
-  // --- HELPER: Tự động lấy relative path từ Full URL ---
   private getStoragePathFromUrl(url: string): string {
     if (url.includes("object_detection")) {
-      // Cắt từ đoạn object_detection trở đi
       return "object_detection" + url.split("object_detection")[1];
     }
-    // Fallback: trả về tên file
     return url.split("/").pop() || url;
   }
 
@@ -72,8 +68,7 @@ export class ImagesService {
 
     return imgs.map(i => ({
       fileName: i.fileName,
-      imageUrl: i.imageUrl,       // Full URL
-      storagePath: i.storagePath, // Relative Path
+      imageUrl: i.imageUrl || i.storagePath,
       dataset: i.dataset,
       version: i.version,
       status: i.isEdited ? "EDITED" : "NEW",
@@ -86,39 +81,45 @@ export class ImagesService {
     return img;
   }
 
-  // --- SỬA: Nhận đủ imageUrl và storagePath ---
-  async saveImageRecord(
-    fileName: string,
-    imageUrl: string,    // Full URL
-    storagePath: string, // Relative Path
-    annotations: any[],
-    dataset: string,
-    version: string,
-    isCrop = false,
-  ) {
-    const anns = this.format(annotations);
-    const ex = await this.imageModel.findOne({ fileName, dataset, version });
-    
-    if (ex) {
-      ex.imageUrl = imageUrl;
-      ex.storagePath = storagePath;
-      ex.annotations = anns;
-      ex.isEdited = true;
-      await ex.save();
-      return ex.toObject();
-    }
+async saveImageRecord(
+  fileName: string,
+  _unusedImageUrl: string, // bỏ luôn biến này
+  storagePath: string,
+  annotations: any[],
+  dataset: string,
+  version: string,
+  isCrop = false,
+) {
+  const anns = this.format(annotations);
 
-    return this.imageModel.create({
-      fileName,
-      imageUrl,
-      storagePath,
-      dataset,
-      version,
-      annotations: anns,
-      isEdited: false,
-      isCrop,
-    });
+  const R2_BASE = process.env.R2_BASE;   // ví dụ: https://pub-xxxx.r2.dev
+  const finalImageUrl = `${R2_BASE}/${storagePath}`;
+
+  const ex = await this.imageModel.findOne({ fileName, dataset, version });
+
+  // === CASE UPDATE ===
+  if (ex) {
+    ex.storagePath = storagePath;
+    ex.imageUrl = finalImageUrl;
+    ex.annotations = anns;
+    ex.isEdited = true;
+    await ex.save();
+    return ex.toObject();
   }
+
+  // === CASE CREATE ===
+  return this.imageModel.create({
+    fileName,
+    storagePath,
+    imageUrl: finalImageUrl,
+    dataset,
+    version,
+    annotations: anns,
+    isCrop,
+    isEdited: false,
+  });
+}
+
 
   async saveAnnotation(
     fileName: string,
@@ -141,7 +142,7 @@ export class ImagesService {
   }
 
   async saveAnnotationJson(
-    storagePath: string, // Relative Path
+    storagePath: string,
     annotations: any[],
     dataset: string,
     version: string,
@@ -169,7 +170,7 @@ export class ImagesService {
     
     coco.images.push({
       id: imgId,
-      storage_path: storagePath, // COCO standard
+      storage_path: storagePath,
       width: 640,
       height: 640,
     });
@@ -195,7 +196,6 @@ export class ImagesService {
     return { key, url: this.r2.publicUrl(key) };
   }
 
-  // --- SỬA: Nhận thêm storagePath ---
   async inferAndSave(fileUrl: string, storagePath: string, dataset: string, version = "v1") {
     const fileName = fileUrl.split("/").pop();
     if (!fileName) throw new HttpException("Invalid URL", 400);
@@ -211,12 +211,10 @@ export class ImagesService {
     return { fileName, dataset, version, annotations: anns, fileUrl, storagePath };
   }
 
-  // --- SỬA: Thêm hàm này và tự tính storagePath ---
   async inferAndSaveReturn(fileUrl: string, dataset: string, version = "v1") {
     const fileName = fileUrl.split("/").pop();
     if (!fileName) throw new HttpException("Invalid URL", 400);
 
-    // Tự suy diễn storagePath
     const storagePath = this.getStoragePathFromUrl(fileUrl);
 
     const raw = await this.infer(fileUrl);
@@ -249,16 +247,14 @@ export class ImagesService {
       .extract({ left: Math.round(x1), top: Math.round(y1), width: w, height: h })
       .toBuffer();
 
-    // Key là Relative Path
     const key = `${dataset}/crops/${Date.now()}_${Math.random()}.jpg`;
-    // Upload trả về Full URL
     const cropUrl = await this.r2.uploadBuffer(key, crop);
 
     const anns = await this.infer(cropUrl);
 
     return {
-      cropUrl, // Full URL
-      key,     // Relative Path
+      cropUrl,
+      key,
       annotations: this.format(anns),
     };
   }
@@ -272,7 +268,6 @@ export class ImagesService {
     const existed = await this.exists(cropName, dataset, version);
     if (existed) return existed;
 
-    // Lưu cả imageUrl và storagePath (key)
     await this.saveImageRecord(
       cropName,
       preview.cropUrl,
@@ -330,71 +325,61 @@ export class ImagesService {
 
     return { key, url: this.r2.publicUrl(key) };
   }
-// Trong ImagesService
 async exportJsonFromMongo(dataset: string, version: string) {
     const metaRoot = process.env.R2_DATASET_METADATA || "metadata";
     const key = `${metaRoot}/${dataset}/${version}/instances.json`;
 
-    // 1. Truy vấn TẤT CẢ bản ghi từ MongoDB
     const allImages = await this.imageModel.find({ dataset, version }).lean();
     
-    // 2. Chuẩn bị cấu trúc COCO/JSON tổng hợp và KHAI BÁO KIỂU DỮ LIỆU RÕ RÀNG
-    // Khai báo kiểu dữ liệu cho coco để TypeScript chấp nhận .push()
     let coco: {
         info: {};
         licenses: any[];
-        images: any[];       // <-- Khai báo rõ là mảng
-        annotations: any[];  // <-- Khai báo rõ là mảng
-        categories: any[];   // <-- Khai báo rõ là mảng
+        images: any[];
+        annotations: any[];
+        categories: any[];
     } = { info: {}, licenses: [], images: [], annotations: [], categories: [] };
     
     let globalAnnId = 1;
-    let globalCatId = 1; // ID cho Categories
-    const categoryMap = new Map<string, number>(); // Lưu trữ {label: id}
+    let globalCatId = 1;
+    const categoryMap = new Map<string, number>();
     
     for (const img of allImages) {
         const imageId = img._id.toString();
 
-        // B. Thêm Image Record
         coco.images.push({
-            id: imageId, // Dùng MongoDB ID làm Image ID
+            id: imageId,
             storage_path: img.storagePath, 
             width: 640, 
             height: 640, 
-            file_name: img.fileName, // Thêm fileName cho rõ ràng hơn
+            file_name: img.fileName,
         });
 
-        // C. Xây dựng Categories và Annotations
         for (const ann of img.annotations) {
             
-            // C1. Cập nhật Categories và lấy category_id
             let categoryId: number;
             if (!categoryMap.has(ann.label)) {
-                // Nếu nhãn chưa tồn tại, tạo mới Category ID
                 categoryId = globalCatId++;
                 categoryMap.set(ann.label, categoryId);
                 
-                // Push vào mảng categories
                 coco.categories.push({ 
                     id: categoryId, 
                     name: ann.label,
-                    supercategory: 'none' // Thêm trường mặc định theo chuẩn COCO
+                    supercategory: 'none'
                 });
             } else {
                 categoryId = categoryMap.get(ann.label)!;
             }
 
-            // C2. Thêm Annotations liên quan
             const [x1, y1, x2, y2] = ann.bbox.map(Number);
-            const w = Math.max(0, x2 - x1); // Đảm bảo w >= 0
-            const h = Math.max(0, y2 - y1); // Đảm bảo h >= 0
+            const w = Math.max(0, x2 - x1);
+            const h = Math.max(0, y2 - y1);
 
             coco.annotations.push({
                 id: globalAnnId++,
                 image_id: imageId,
-                category_id: categoryId, // Dùng ID số
-                label: ann.label, // Giữ lại label (Tùy chọn)
-                bbox: [x1, y1, w, h], // Định dạng COCO [x, y, w, h]
+                category_id: categoryId,
+                label: ann.label,
+                bbox: [x1, y1, w, h],
                 area: w * h,
                 iscrowd: 0,
                 score: ann.confidence ?? 0,
@@ -402,7 +387,6 @@ async exportJsonFromMongo(dataset: string, version: string) {
         }
     }
 
-    // 4. Ghi đè file instances.json hoàn chỉnh lên R2
     await this.r2.uploadText(key, JSON.stringify(coco, null, 2));
 
     return { key, totalImages: allImages.length };

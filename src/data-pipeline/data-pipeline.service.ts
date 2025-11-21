@@ -4,7 +4,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ImagesService } from "../images/images.service";
 import { R2Service } from "../r2/r2.service";
 import { MinioService } from "src/minio/minio.service";
-import pLimit from "p-limit"; // <--- THÊM DÒNG NÀY
+import pLimit from "p-limit";
 
 @Injectable()
 export class DataPipelineService {
@@ -12,7 +12,7 @@ export class DataPipelineService {
 
   constructor(
     private readonly images: ImagesService,
-    private readonly r2: R2Service,
+    private readonly r2: MinioService,
   ) {}
 
   private prefix(dataset: string) {
@@ -28,13 +28,11 @@ export class DataPipelineService {
     let total = 0;
     let success = 0;
 
-    // Khởi tạo bộ giới hạn đồng thời: Tùy chỉnh giới hạn này (ví dụ: 10-20)
     const MAX_CONCURRENT = 15; 
     const limit = pLimit(MAX_CONCURRENT);
 
     const allImageKeys: string[] = [];
 
-    // 1. Gộp tất cả keys từ các thư mục con
     for (const cls of classes) {
       const classPrefix = `${root}/${cls}`;
       const files = await this.r2.listFiles(classPrefix);
@@ -49,14 +47,12 @@ export class DataPipelineService {
     this.logger.log(`Starting to process ${total} images with concurrency limit: ${MAX_CONCURRENT}`);
 
 
-    // 2. Chuyển Vòng Lặp Tuần tự sang Song song có Giới hạn
     const processingPromises = allImageKeys.map(key => limit(async () => {
-      const url = this.r2.publicUrl(key); // Đây là Full URL
+      const url = this.r2.publicUrl(key);
       const fileName = key.split("/").pop();
       if (!fileName) return false;
 
       try {
-        // Infer và lưu vào MongoDB (AN TOÀN)
         const rec = await this.images.inferAndSave(
           url,
           key,
@@ -64,25 +60,20 @@ export class DataPipelineService {
           version
         );
 
-        // Save text annotation (.txt files) (AN TOÀN, vì mỗi ảnh là 1 file)
         await this.images.saveAnnotation(fileName, rec.annotations, dataset, version);
         
-        // ❌ LOẠI BỎ saveAnnotationJson để tránh Race Condition
-
-        this.logger.log(`✔ processed: ${fileName}`);
+        this.logger.log(`processed: ${fileName}`);
         return true;
       } catch (err: any) {
-        this.logger.error(`✘ failed: ${fileName} :: ${err.message || err}`);
+        this.logger.error(`failed: ${fileName} :: ${err.message || err}`);
         return false;
       }
     }));
 
-    // Chờ tất cả các tác vụ hoàn thành
     const results = await Promise.all(processingPromises);
     success = results.filter(r => r === true).length;
 
 
-    // 3. THỰC HIỆN EXPORT JSON TẬP TRUNG sau khi pipeline hoàn tất
     if (success > 0) {
         this.logger.log('Starting final JSON (instances.json) export from MongoDB...');
         const exportResult = await this.images.exportJsonFromMongo(dataset, version);
@@ -111,7 +102,6 @@ export class DataPipelineService {
     let totalSuccess = 0;
 
     for (const dataset of filtered) {
-      // Lưu ý: Vòng lặp này vẫn chạy tuần tự theo dataset, điều này là tốt để tránh xung đột lớn
       const r = await this.autoLabelDataset(dataset, version);
       totalFiles += r.total;
       totalSuccess += r.success;
