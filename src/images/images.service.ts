@@ -133,7 +133,7 @@ export class ImagesService {
     }).join("\n");
 
     await this.r2.uploadText(key, lines);
-
+    this.logger.log(`[LABELS SAVED] TXT: ${dataset}/${version}/${fileName} saved to R2 key: ${key}`);
     return { key, url: this.r2.publicUrl(key) };
   }
 
