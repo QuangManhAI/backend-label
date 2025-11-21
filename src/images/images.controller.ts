@@ -6,6 +6,15 @@ import { R2Service } from "../r2/r2.service";
 export class ImagesController {
   constructor(private readonly service: ImagesService, private readonly r2: R2Service) {}
 
+  // Hàm phụ: Tách lấy storagePath từ Full URL (Logic giống bên Service)
+  private getStoragePath(url: string): string {
+    if (!url) return "";
+    if (url.includes("object_detection")) {
+      return "object_detection" + url.split("object_detection")[1];
+    }
+    return url.split("/").pop() || url;
+  }
+
   @Get("list")
   async list(
     @Query("dataset") dataset: string,
@@ -25,12 +34,22 @@ export class ImagesController {
     return this.service.getByName(fileName, dataset, version);
   }
 
+  // --- SỬA: Tính toán storagePath trước khi gọi Service ---
   @Post("infer")
   async infer(@Body() body: { fileUrl: string; dataset: string; version?: string }) {
     if (!body.fileUrl) {
       throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
     }
-    return this.service.inferAndSave(body.fileUrl, body.dataset, body.version || "v1");
+    
+    // Tự động lấy storagePath từ fileUrl
+    const storagePath = this.getStoragePath(body.fileUrl);
+
+    return this.service.inferAndSave(
+      body.fileUrl, 
+      storagePath, // Truyền thêm tham số này
+      body.dataset, 
+      body.version || "v1"
+    );
   }
     
   @Post("infer/return-only")
@@ -38,23 +57,31 @@ export class ImagesController {
     if (!body.fileUrl) {
       throw new HttpException("fileUrl required", HttpStatus.BAD_REQUEST);
     }
+    // Hàm này bên Service đã tự tính storagePath nên không cần truyền
     return this.service.inferAndSaveReturn(body.fileUrl, body.dataset, body.version || "v1");
   }
 
+  // --- SỬA: Nhận body và truyền đủ 3 tham số đường dẫn ---
   @Post("save")
   async save(
     @Body() body: {
       fileName: string;
-      fileUrl: string;
+      fileUrl: string;      // Frontend gửi Full URL
+      storagePath?: string; // Frontend có thể gửi hoặc không
       dataset: string;
       version?: string;
       annotations: any[];
     },
   ) {
     const version = body.version || "v1";
+
+    // Ưu tiên lấy storagePath frontend gửi, nếu không thì tự tính từ fileUrl
+    const finalStoragePath = body.storagePath || this.getStoragePath(body.fileUrl);
+
     return this.service.saveImageRecord(
       body.fileName,
-      body.fileUrl,
+      body.fileUrl,      // imageUrl
+      finalStoragePath,  // storagePath (Mới thêm)
       body.annotations,
       body.dataset,
       version,
@@ -84,5 +111,35 @@ export class ImagesController {
   @Get("datasets")
   async listDatasets() {
     return this.service.listDatasets();
+  }
+
+  // Endpoint Export JSON (Dùng lại hàm Service đã sửa)
+  @Post("export-json")
+  async exportJson(@Body() body: { dataset: string; version?: string }) {
+      const version = body.version || "v1";
+      
+      // Lấy tất cả ảnh để tạo lại file JSON
+      const allImages = await this.service.imageModel.find({ 
+        dataset: body.dataset, 
+        version: version 
+      });
+
+      console.log(`Exporting ${allImages.length} images for ${body.dataset}...`);
+
+      for (const img of allImages) {
+          // img.storagePath lúc này đã chứa đường dẫn tương đối chuẩn (object_detection/...)
+          await this.service.saveAnnotationJson(
+            img.storagePath, 
+            img.annotations, 
+            body.dataset, 
+            version
+          );
+      }
+
+      return { 
+        message: "Export JSON success", 
+        total: allImages.length,
+        path: `metadata/${body.dataset}/${version}/instances.json`
+      };
   }
 }

@@ -12,12 +12,15 @@ export class Annotation {
 
 @Schema({ timestamps: true })
 export class Image extends Document {
-  @Prop({ required: true }) fileName: string; // quan trong
-  @Prop({ required: true }) filePath: string; // quan trong
-  @Prop({ default: false }) isEdited: boolean; // quan trong
-  @Prop({ required: true }) dataset: string; // quan trong
+  @Prop({ required: true }) fileName: string;
+  
+  @Prop({ required: true }) imageUrl: string;     // Full URL (http://...)
+  @Prop({ required: true }) storagePath: string;  // Relative Path (object_detection/...)
+
+  @Prop({ default: false }) isEdited: boolean;
+  @Prop({ required: true }) dataset: string;
   @Prop({ default: "v1" }) version: string; 
-  @Prop({ type: Array, default: [] }) annotations: Annotation[]; // quan trong
+  @Prop({ type: Array, default: [] }) annotations: Annotation[];
   @Prop({ default: false }) isCrop: boolean;
 }
 

@@ -29,12 +29,10 @@ export class R2Service {
     });
   }
 
-  /** Public URL */
   publicUrl(key: string) {
     return `https://${this.publicHost}/${key}`;
   }
 
-  /** Upload buffer */
   async uploadBuffer(key: string, buffer: Buffer, mime = "application/octet-stream") {
     await this.s3.send(
       new PutObjectCommand({
@@ -47,13 +45,11 @@ export class R2Service {
     return this.publicUrl(key);
   }
 
-  /** Upload local file */
   async uploadFile(key: string, absPath: string, mime = "application/octet-stream") {
     const buf = fs.readFileSync(absPath);
     return this.uploadBuffer(key, buf, mime);
   }
 
-  /** List subfolders */
   async listFolders(prefix: string) {
     const res = await this.s3.send(
       new ListObjectsV2Command({
@@ -70,43 +66,53 @@ export class R2Service {
     );
   }
 
-  /** List files */
   async listFiles(prefix: string) {
-    const res = await this.s3.send(
-      new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: prefix.endsWith("/") ? prefix : `${prefix}/`,
-      }),
-    );
+    let allKeys: string[] = [];
+    let token: string | undefined = undefined;
 
-    return res.Contents?.map((o) => o.Key!).filter((k) => !k.endsWith("/")) || [];
+    do {
+      const res = await this.s3.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix.endsWith("/") ? prefix : `${prefix}/`,
+          MaxKeys: 1000, 
+          ContinuationToken: token,
+        }),
+      );
+
+      const keys = res.Contents?.map((o) => o.Key!).filter((k) => !k.endsWith("/")) || [];
+      allKeys = allKeys.concat(keys);
+
+      token = res.NextContinuationToken;
+
+    } while (token);
+
+    return allKeys;
   }
 
-async uploadText(key: string, content: string) {
-  await this.s3.send(
-    new PutObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-      Body: content,
-      ContentType: "text/plain",
-    })
-  );
-  return this.publicUrl(key);
-}
+  async uploadText(key: string, content: string) {
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: content,
+        ContentType: "text/plain",
+      })
+    );
+    return this.publicUrl(key);
+  }
 
-async readText(key: string): Promise<string> {
-  const res = await this.s3.send(
-    new GetObjectCommand({
-      Bucket: this.bucket,
-      Key: key,
-    })
-  );
+  async readText(key: string): Promise<string> {
+    const res = await this.s3.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      })
+    );
 
-  const body = res.Body as any;
-  if (!body) return "";
+    const body = res.Body as any;
+    if (!body) return "";
 
-  return await body.transformToString();
-}
-
-
+    return await body.transformToString();
+  }
 }

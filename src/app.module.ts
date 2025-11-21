@@ -5,6 +5,7 @@ import { ImagesModule } from "./images/images.module";
 import { DataPipelineModule } from "./data-pipeline/data-pipeline.module";
 import { ToolsModule } from "./tools/tools.module";
 import { R2Module } from "./r2/r2.module";
+import { MinioModule } from "./minio/minio.module";
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { R2Module } from "./r2/r2.module";
       dbName: process.env.MONGO_DB,
     }),
     R2Module,
+    MinioModule,
     ImagesModule,
     DataPipelineModule,
     ToolsModule,
