@@ -391,4 +391,17 @@ async exportJsonFromMongo(dataset: string, version: string) {
 
     return { key, totalImages: allImages.length };
 }
+
+  async getStats(dataset: string) {
+    const query: any = {};
+    if (dataset) {
+      query.dataset = dataset;
+    }
+
+    const total = await this.imageModel.countDocuments(query);
+    const edited = await this.imageModel.countDocuments({ ...query, isEdited: true });
+
+    return { total, edited };
+  }
+  
 }

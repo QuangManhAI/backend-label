@@ -135,4 +135,8 @@ export class ImagesController {
         path: `metadata/${body.dataset}/${version}/instances.json`
       };
   }
+  @Get('stats')
+  async getStats(@Query('dataset') dataset: string) {
+    return this.service.getStats(dataset);
+  }
 }
